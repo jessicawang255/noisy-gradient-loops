@@ -1,0 +1,798 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Blob Blur Loop Studio</title>
+<script src="https://unpkg.com/gif.js@0.2.0/dist/gif.js"></script>
+<style>
+  :root{
+    --bg:#0a0a0c; --panel: rgba(16,16,20,0.7); --line: rgba(255,255,255,0.1);
+    --text:#e9e7e2; --dim:#8f8d94; --accent:#c9ff3e;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;height:100%;background:var(--bg);overflow:hidden;
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;}
+  canvas{display:block;width:100vw;height:100vh;}
+
+  #panel{
+    position:fixed; bottom:10px; right:46px; width:660px; max-height:calc(100vh - 20px);
+    background:var(--panel); border:1px solid var(--line); border-radius:8px;
+    padding:12px 13px 11px; backdrop-filter: blur(12px) saturate(140%);
+    color:var(--text); font-size:10.5px; overflow-y:auto;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.4);
+    display:grid; grid-template-columns:1.4fr 0.95fr; gap:10px;
+  }
+  #panel h1{ grid-column:1/-1; }
+  .section-card{
+    background: rgba(10,10,14,0.88);
+    border:1px solid rgba(255,255,255,0.08);
+    border-radius:8px;
+    padding:11px;
+  }
+  .section-card h2{ margin:0 0 8px; }
+  #presetSection, #recordSection{ display:flex; flex-direction:column; gap:8px; }
+  #recordSection{ grid-column:2; }
+  #presetSection #presetList{ max-height:120px; overflow-y:auto; }
+  #panel::-webkit-scrollbar{ width:4px; }
+  #panel::-webkit-scrollbar-thumb{ background:var(--line); border-radius:2px; }
+
+  h1{ font-size:11px; letter-spacing:.04em; color:var(--text);
+      margin:0 0 2px; font-weight:600; }
+  .subtitle{ grid-column:1/-1; font-size:9px; color:var(--dim); margin:0 0 10px; }
+  h2{ font-size:9px; letter-spacing:.09em; text-transform:uppercase; color:var(--dim);
+      margin:10px 0 6px; font-weight:600; }
+  h2:first-of-type{ margin-top:0; }
+  h2 .h2-hint{ text-transform:none; letter-spacing:0; font-weight:400; color:var(--dim); opacity:0.7; }
+
+  .row{ display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:5px; }
+  .row label{ color:var(--dim); font-size:10px; min-width:64px; cursor:help; }
+  .row input.numOut{
+    width:34px; min-width:34px; text-align:right; font-variant-numeric: tabular-nums; font-size:10px;
+    background:rgba(255,255,255,0.05); border:1px solid var(--line); border-radius:3px;
+    color:var(--text); font-family:inherit; padding:1px 3px;
+  }
+  .row input.numOut:focus{ outline:none; border-color:var(--accent); }
+  .hint{ color:var(--dim); font-size:8.5px; line-height:1.4; margin:-1px 0 6px; }
+  input[type=range]{
+    -webkit-appearance:none; flex:1; height:2px; background:var(--line);
+    border-radius:2px; outline:none;
+  }
+  input[type=range]::-webkit-slider-thumb{
+    -webkit-appearance:none; width:9px; height:9px; border-radius:50%;
+    background:var(--accent); cursor:pointer; margin-top:-3.5px;
+  }
+  .swatches{ display:flex; flex-wrap:wrap; gap:9px 4px; margin-bottom:6px; }
+  input[type=color]{
+    -webkit-appearance:none; width:100%; height:16px; border:1px solid var(--line);
+    border-radius:3px; background:none; padding:0; cursor:pointer;
+  }
+  input[type=color]::-webkit-color-swatch{ border-radius:2px; border:none; }
+  .swatch{ position:relative; flex:1 1 48px; min-width:44px; display:flex; flex-direction:column; gap:3px; }
+  .swatch input[type=color]{ height:38px; }
+  .colorHex{
+    width:100%; background:rgba(255,255,255,0.05); border:1px solid var(--line); border-radius:3px;
+    color:var(--text); font:inherit; font-size:8.5px; text-align:center; text-transform:lowercase;
+    padding:2px 0; letter-spacing:.02em;
+  }
+  .colorHex:focus{ outline:none; border-color:var(--accent); }
+  .colorHex.invalid{ border-color:#ff6b6b; color:#ff6b6b; }
+  .alphaRow{ position:relative; }
+  .colorAlpha{
+    width:100%; background:rgba(255,255,255,0.05); border:1px solid var(--line); border-radius:3px;
+    color:var(--text); font:inherit; font-size:8.5px; text-align:center;
+    padding:2px 12px 2px 2px; letter-spacing:.02em;
+  }
+  .colorAlpha:focus{ outline:none; border-color:var(--accent); }
+  .alphaRow::after{
+    content:"%"; position:absolute; right:5px; top:50%; transform:translateY(-50%);
+    font-size:8.5px; color:var(--dim); pointer-events:none;
+  }
+  .swatchDel{
+    position:absolute; top:-6px; right:-6px; width:14px; height:14px; border-radius:50%;
+    border:1px solid var(--line); background:var(--bg); color:var(--dim);
+    font-size:9px; line-height:1; display:flex; align-items:center; justify-content:center;
+    cursor:pointer; padding:0; z-index:1;
+  }
+  .swatchDel:hover{ border-color:var(--accent); color:var(--accent); }
+  #addColorBtn{
+    flex:1 1 48px; min-width:44px; height:55px; border-radius:3px; border:1px dashed var(--line);
+    background:none; color:var(--dim); cursor:pointer; font-size:14px; line-height:1;
+    display:flex; align-items:center; justify-content:center;
+  }
+  #addColorBtn:hover{ border-color:var(--accent); color:var(--accent); }
+
+  hr{ border:none; border-top:1px solid var(--line); margin:8px 0; }
+
+  #exportFormat{
+    background:rgba(255,255,255,0.05); border:1px solid var(--line); border-radius:4px;
+    color:var(--text); font:inherit; font-size:9.5px; padding:4px 6px; cursor:pointer;
+  }
+  #exportFormat:focus{ outline:none; border-color:var(--accent); }
+
+  #recordBtn{
+    width:100%; padding:6px 0; border-radius:5px; border:1px solid var(--line);
+    background:transparent; color:var(--text); font:inherit; font-size:9.5px;
+    cursor:pointer;
+  }
+  #recordBtn:hover{ border-color:var(--accent); color:var(--accent); }
+  #recordBtn.recording{ background:var(--accent); color:#0a0a0c; border-color:var(--accent); }
+  #status,#period{ color:var(--dim); font-size:9px; margin-top:4px; }
+  #period{ color:var(--text); }
+
+  #toggle{
+    position:fixed; right:10px; bottom:10px; width:28px; height:28px;
+    border-radius:7px; border:1px solid var(--line); background:var(--panel);
+    color:var(--dim); display:flex; align-items:center; justify-content:center;
+    cursor:pointer; backdrop-filter: blur(12px); font-size:13px; z-index:5;
+  }
+  #toggle:hover{ border-color:var(--accent); color:var(--accent); }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<div id="panel">
+  <h1>Blob Blur Studio</h1>
+  <div class="subtitle">Design an animated gradient-noise loop, then record it as a seamless video.</div>
+
+  <div class="section-card" id="controlSection">
+    <h2>Palette</h2>
+    <div class="swatches" id="swatches"></div>
+    <div class="hint">1 &amp; 2 also tint the background wash · all colors cycle through the blobs · + / × to add or remove (2–8) · slider under each sets its opacity</div>
+
+    <h2>Blobs</h2>
+    <div class="row"><label title="How many blobs are drawn">Count</label><input type="range" id="count" min="3" max="9" step="1" value="6" title="How many blobs are drawn"><input type="text" inputmode="decimal" class="numOut" id="countOut" value="6" title="How many blobs are drawn — type to set exactly"></div>
+    <div class="row"><label title="Blob radius, relative to canvas size">Size</label><input type="range" id="size" min="0.25" max="0.9" step="0.01" value="0.5" title="Blob radius, relative to canvas size"><input type="text" inputmode="decimal" class="numOut" id="sizeOut" value="0.50" title="Blob radius, relative to canvas size — type to set exactly"></div>
+    <div class="row"><label title="How much each blob's edge ripples">Wobble</label><input type="range" id="wobble" min="0" max="1" step="0.01" value="0.4" title="How much each blob's edge ripples"><input type="text" inputmode="decimal" class="numOut" id="wobbleOut" value="0.40" title="How much each blob's edge ripples — type to set exactly"></div>
+    <div class="row"><label title="How far blobs orbit from their resting spot">Drift</label><input type="range" id="drift" min="0" max="1" step="0.01" value="0.35" title="How far blobs orbit from their resting spot"><input type="text" inputmode="decimal" class="numOut" id="driftOut" value="0.35" title="How far blobs orbit from their resting spot — type to set exactly"></div>
+
+    <h2>Motion &amp; blur</h2>
+    <div class="row"><label title="Gaussian blur applied over the blobs, in pixels">Blur</label><input type="range" id="blur" min="0" max="140" step="1" value="70" title="Gaussian blur applied over the blobs, in pixels"><input type="text" inputmode="decimal" class="numOut" id="blurOut" value="70" title="Gaussian blur applied over the blobs, in pixels — type to set exactly"></div>
+    <div class="row"><label title="Animation speed — also sets how long one loop takes">Speed</label><input type="range" id="speed" min="0.1" max="1.2" step="0.01" value="0.35" title="Animation speed — also sets how long one loop takes"><input type="text" inputmode="decimal" class="numOut" id="speedOut" value="0.35" title="Animation speed — type to set exactly"></div>
+    <div id="speedPeriod" class="hint">loop length: —</div>
+
+    <h2>Grain <span class="h2-hint">(film static overlay)</span></h2>
+    <div class="row"><label title="How visible the grain overlay is">Opacity</label><input type="range" id="grain" min="0" max="0.6" step="0.01" value="0.1" title="How visible the grain overlay is"><input type="text" inputmode="decimal" class="numOut" id="grainOut" value="0.10" title="How visible the grain overlay is — type to set exactly"></div>
+    <div class="row"><label title="Size of each grain speck, in pixels">Pixels</label><input type="range" id="staticSize" min="1" max="8" step="1" value="2" title="Size of each grain speck, in pixels"><input type="text" inputmode="decimal" class="numOut" id="staticSizeOut" value="2" title="Size of each grain speck, in pixels — type to set exactly"></div>
+    <div class="row"><label title="How often the grain pattern refreshes per second">Hertz</label><input type="range" id="staticRate" min="4" max="30" step="1" value="20" title="How often the grain pattern refreshes per second"><input type="text" inputmode="decimal" class="numOut" id="staticRateOut" value="20" title="How often the grain pattern refreshes per second — type to set exactly"></div>
+    <div id="hzNote" class="hint"></div>
+  </div>
+
+  <div class="section-card" id="presetSection">
+    <h2>Presets <span class="h2-hint">(saved on this device)</span></h2>
+    <div class="row" style="gap:4px;">
+      <input type="text" id="presetName" placeholder="name this look…"
+        style="flex:1; min-width:0; background:rgba(255,255,255,0.05); border:1px solid var(--line);
+        border-radius:4px; color:var(--text); font:inherit; font-size:9.5px; padding:4px 6px;">
+      <button id="savePresetBtn" title="Save the current settings as a preset"
+        style="padding:4px 9px; border-radius:4px; border:1px solid var(--line); background:transparent;
+        color:var(--text); font:inherit; font-size:9.5px; cursor:pointer;">Save</button>
+    </div>
+    <div id="presetList" style="margin:2px 0 6px; max-height:96px; overflow-y:auto;"></div>
+    <div class="hint" style="margin-top:-4px;">click a name to load it · check boxes to batch-export below</div>
+
+    <div class="row">
+      <button id="batchBtn" title="Records one loop per checked preset above, in the format set below" style="flex:1; padding:6px 0; border-radius:5px; border:1px solid var(--line);
+        background:transparent; color:var(--text); font:inherit; font-size:9.5px; cursor:pointer;">▶ Export checked presets</button>
+    </div>
+    <div class="hint">uses the format picked in Record below · browser may ask to allow multiple downloads — click allow</div>
+    <div id="batchStatus" class="hint" style="margin-bottom:0;"></div>
+  </div>
+
+  <div class="section-card" id="recordSection">
+    <h2>Record</h2>
+    <div class="row" style="margin-bottom:6px;">
+      <label title="File format for exported loops">Format</label>
+      <select id="exportFormat" title="Video: mp4 when the browser supports it, else webm. GIF: downscaled, smaller palette.">
+        <option value="video">Video (mp4/webm)</option>
+        <option value="gif">GIF</option>
+      </select>
+    </div>
+    <button id="recordBtn" title="Records exactly one loop, from the seam">● Record loop</button>
+    <div id="period">loop length: —</div>
+    <div class="hint" style="margin:-2px 0 0;">set by the Speed slider — one full loop, seamless · GIF exports are downscaled to keep file size sane</div>
+    <div id="status"></div>
+  </div>
+</div>
+
+<div id="toggle" title="Hide panel">⌄</div>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W=0,H=0,DPR=1;
+
+function resize(){
+  DPR = Math.min(window.devicePixelRatio||1, 2);
+  W = innerWidth*DPR; H = innerHeight*DPR;
+  canvas.width = W; canvas.height = H;
+  buildNoiseFrames();
+}
+window.addEventListener('resize', resize);
+
+const controls = {
+  count: document.getElementById('count'),
+  size: document.getElementById('size'),
+  wobble: document.getElementById('wobble'),
+  drift: document.getElementById('drift'),
+  blur: document.getElementById('blur'),
+  speed: document.getElementById('speed'),
+  grain: document.getElementById('grain'),
+  staticSize: document.getElementById('staticSize'),
+  staticRate: document.getElementById('staticRate'),
+};
+const outs = {
+  count: document.getElementById('countOut'),
+  size: document.getElementById('sizeOut'),
+  wobble: document.getElementById('wobbleOut'),
+  drift: document.getElementById('driftOut'),
+  blur: document.getElementById('blurOut'),
+  speed: document.getElementById('speedOut'),
+  grain: document.getElementById('grainOut'),
+  staticSize: document.getElementById('staticSizeOut'),
+  staticRate: document.getElementById('staticRateOut'),
+};
+const intFields = new Set(['count','blur','staticSize','staticRate']);
+const NOISE_REBUILD_KEYS = ['staticSize','staticRate','speed'];
+function formatOut(k){
+  const v = parseFloat(controls[k].value);
+  outs[k].value = intFields.has(k) ? v.toFixed(0) : v.toFixed(2);
+}
+Object.keys(controls).forEach(k=>{
+  controls[k].addEventListener('input', ()=>{
+    formatOut(k);
+    updatePeriodLabel();
+  });
+});
+// only these three actually change the precomputed static frames — and only
+// after the user stops dragging, so it never runs mid-slide
+NOISE_REBUILD_KEYS.forEach(k=>{
+  controls[k].addEventListener('input', scheduleNoiseRebuild);
+});
+let noiseRebuildTimer = null;
+function scheduleNoiseRebuild(){
+  clearTimeout(noiseRebuildTimer);
+  noiseRebuildTimer = setTimeout(buildNoiseFrames, 150);
+}
+// typed numbers in the readouts drive the same slider + render/rebuild logic
+Object.keys(outs).forEach(k=>{
+  outs[k].addEventListener('input', ()=>{
+    const n = parseFloat(outs[k].value);
+    if(isNaN(n)) return;
+    const min = parseFloat(controls[k].min), max = parseFloat(controls[k].max);
+    controls[k].value = Math.max(min, Math.min(max, n));
+    updatePeriodLabel();
+    if(NOISE_REBUILD_KEYS.includes(k)) scheduleNoiseRebuild();
+  });
+  outs[k].addEventListener('blur', ()=> formatOut(k));
+  outs[k].addEventListener('keydown', (e)=>{
+    if(e.key==='Enter') outs[k].blur();
+  });
+});
+// ---- palette: dynamic list of hex colors, not fixed inputs ----
+const MIN_COLORS = 2, MAX_COLORS = 8;
+let paletteColors = ['#2b1055','#7597de','#ff8a6b','#3fc9a3'];
+let paletteAlphas = [1,1,1,1];
+
+function colorRoleTitle(i){
+  return i<2
+    ? `Color ${i+1} — background gradient ${i===0?'(start)':'(end)'} + cycles through blobs`
+    : `Color ${i+1} — blob fill only (cycles with the others)`;
+}
+
+function randomHexColor(){
+  const h = Math.random()*360, s = 55+Math.random()*25, l = 45+Math.random()*20;
+  const a = s*Math.min(l,100-l)/100;
+  const f = n=>{
+    const k = (n+h/30)%12;
+    const c = l/100 - a*Math.max(-1, Math.min(k-3, 9-k, 1));
+    return Math.round(255*c).toString(16).padStart(2,'0');
+  };
+  return `#${f(0)}${f(8)}${f(4)}`;
+}
+
+const HEX_RE = /^#[0-9a-f]{6}$/i;
+
+function renderSwatches(){
+  const wrap = document.getElementById('swatches');
+  wrap.innerHTML = paletteColors.map((hex,i)=>`
+    <div class="swatch">
+      <input type="color" class="colorInput" data-i="${i}" value="${hex}" title="${colorRoleTitle(i)} — click to pick visually">
+      <input type="text" class="colorHex" data-i="${i}" value="${hex}" spellcheck="false" maxlength="7" title="Type a hex code, e.g. #ff8a6b">
+      <div class="alphaRow">
+        <input type="text" inputmode="numeric" class="colorAlpha" data-i="${i}" maxlength="3" value="${Math.round((paletteAlphas[i]??1)*100)}" title="Opacity, 0–100%">
+      </div>
+      ${paletteColors.length>MIN_COLORS ? `<button class="swatchDel" data-i="${i}" title="Remove color ${i+1}">×</button>` : ''}
+    </div>`).join('')
+    + (paletteColors.length<MAX_COLORS ? `<button id="addColorBtn" title="Add a color">+</button>` : '');
+
+  wrap.querySelectorAll('.colorAlpha').forEach(inp=>{
+    inp.addEventListener('input', ()=>{
+      const i = +inp.dataset.i;
+      const n = parseFloat(inp.value);
+      if(!isNaN(n)) paletteAlphas[i] = Math.max(0, Math.min(100, n))/100;
+    });
+    inp.addEventListener('blur', ()=>{
+      const i = +inp.dataset.i;
+      inp.value = Math.round((paletteAlphas[i]??1)*100);
+    });
+  });
+  wrap.querySelectorAll('.colorInput').forEach(inp=>{
+    inp.addEventListener('input', ()=>{
+      const i = +inp.dataset.i;
+      paletteColors[i] = inp.value;
+      const hexField = wrap.querySelector(`.colorHex[data-i="${i}"]`);
+      hexField.value = inp.value;
+      hexField.classList.remove('invalid');
+    });
+  });
+  wrap.querySelectorAll('.colorHex').forEach(inp=>{
+    inp.addEventListener('input', ()=>{
+      const i = +inp.dataset.i;
+      let v = inp.value.trim();
+      if(v && v[0]!=='#') v = '#'+v;
+      if(HEX_RE.test(v)){
+        paletteColors[i] = v;
+        wrap.querySelector(`.colorInput[data-i="${i}"]`).value = v;
+        inp.classList.remove('invalid');
+      } else {
+        inp.classList.add('invalid');
+      }
+    });
+    inp.addEventListener('blur', ()=>{
+      inp.value = paletteColors[+inp.dataset.i];
+      inp.classList.remove('invalid');
+    });
+  });
+  wrap.querySelectorAll('.swatchDel').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      paletteColors.splice(+btn.dataset.i, 1);
+      paletteAlphas.splice(+btn.dataset.i, 1);
+      renderSwatches();
+    });
+  });
+  const addBtn = document.getElementById('addColorBtn');
+  if(addBtn) addBtn.addEventListener('click', ()=>{
+    paletteColors.push(randomHexColor());
+    paletteAlphas.push(1);
+    renderSwatches();
+  });
+}
+renderSwatches();
+
+function updatePeriodLabel(){
+  const speed = parseFloat(controls.speed.value);
+  const period = 2*Math.PI/speed;
+  const label = 'loop length: ' + period.toFixed(1) + 's';
+  document.getElementById('period').textContent = label;
+  document.getElementById('speedPeriod').textContent = label;
+}
+
+// ---- presets: stored in localStorage, works normally once this is your own file ----
+const PRESET_KEY = 'blobLoopPresets_v1';
+
+function getState(){
+  const state = { colors: paletteColors.slice(), alphas: paletteAlphas.slice() };
+  Object.keys(controls).forEach(k=> state[k] = controls[k].value);
+  return state;
+}
+
+function applyState(state){
+  if(state.colors && state.colors.length){
+    paletteColors = state.colors.slice(0, MAX_COLORS);
+    paletteAlphas = (state.alphas || []).slice(0, MAX_COLORS);
+    while(paletteColors.length < MIN_COLORS) paletteColors.push(randomHexColor());
+    while(paletteAlphas.length < paletteColors.length) paletteAlphas.push(1);
+    renderSwatches();
+  }
+  Object.keys(controls).forEach(k=>{
+    if(state[k]!==undefined){
+      controls[k].value = state[k];
+      formatOut(k);
+    }
+  });
+  updatePeriodLabel();
+  buildNoiseFrames();
+}
+
+function loadPresetMap(){
+  try{ return JSON.parse(localStorage.getItem(PRESET_KEY) || '{}'); }
+  catch(e){ return {}; }
+}
+function savePresetMap(map){ localStorage.setItem(PRESET_KEY, JSON.stringify(map)); }
+function escapeHtml(s){
+  return s.replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function renderPresetList(){
+  const map = loadPresetMap();
+  const names = Object.keys(map);
+  const el = document.getElementById('presetList');
+  if(names.length===0){
+    el.innerHTML = '<div style="color:var(--dim); font-size:8.5px; padding:2px 0;">no saved presets yet</div>';
+    return;
+  }
+  el.innerHTML = names.map(name => `
+    <div style="display:flex; align-items:center; gap:4px; padding:3px 0; border-bottom:1px solid var(--line);">
+      <input type="checkbox" class="presetCheck" data-name="${escapeHtml(name)}" style="margin:0;">
+      <span class="presetLoad" data-name="${escapeHtml(name)}"
+        style="flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; cursor:pointer;">${escapeHtml(name)}</span>
+      <button class="presetDel" data-name="${escapeHtml(name)}"
+        style="background:none;border:none;color:var(--dim);cursor:pointer;font-size:11px;padding:0 2px;">×</button>
+    </div>`).join('');
+
+  el.querySelectorAll('.presetLoad').forEach(elm=>{
+    elm.addEventListener('click', ()=>{
+      const state = loadPresetMap()[elm.dataset.name];
+      if(state) applyState(state);
+    });
+  });
+  el.querySelectorAll('.presetDel').forEach(elm=>{
+    elm.addEventListener('click', (ev)=>{
+      ev.stopPropagation();
+      const map = loadPresetMap();
+      delete map[elm.dataset.name];
+      savePresetMap(map);
+      renderPresetList();
+    });
+  });
+}
+
+document.getElementById('savePresetBtn').addEventListener('click', ()=>{
+  const input = document.getElementById('presetName');
+  const name = input.value.trim();
+  if(!name) return;
+  const map = loadPresetMap();
+  map[name] = getState();
+  savePresetMap(map);
+  input.value = '';
+  renderPresetList();
+});
+
+renderPresetList();
+
+// ---- blob shape: smooth closed curve through wobbling points ----
+function blobPoints(baseR, wobbleAmp, t, seedBase, numPoints){
+  const pts = [];
+  for(let i=0;i<numPoints;i++){
+    const ang = (i/numPoints) * Math.PI*2;
+    const s1 = Math.sin(t*1 + seedBase + i*1.8);
+    const s2 = Math.sin(t*2 + seedBase*1.4 + i*0.9);
+    const r = baseR + wobbleAmp*(s1*0.65 + s2*0.35);
+    pts.push({ x: Math.cos(ang)*r, y: Math.sin(ang)*r });
+  }
+  return pts;
+}
+
+function drawSmoothBlob(ctx, pts){
+  const n = pts.length;
+  ctx.beginPath();
+  for(let i=0;i<n;i++){
+    const p0 = pts[(i-1+n)%n];
+    const p1 = pts[i];
+    const p2 = pts[(i+1)%n];
+    const p3 = pts[(i+2)%n];
+    const cp1x = p1.x + (p2.x-p0.x)/6;
+    const cp1y = p1.y + (p2.y-p0.y)/6;
+    const cp2x = p2.x - (p3.x-p1.x)/6;
+    const cp2y = p2.y - (p3.y-p1.y)/6;
+    if(i===0) ctx.moveTo(p1.x,p1.y);
+    ctx.bezierCurveTo(cp1x,cp1y,cp2x,cp2y,p2.x,p2.y);
+  }
+  ctx.closePath();
+}
+
+function hexToRgb(hex){
+  const v = parseInt(hex.slice(1),16);
+  return [(v>>16)&255,(v>>8)&255,v&255];
+}
+
+// ---- static: precomputed, quantized so it loops exactly with the gradient ----
+let noiseFrames = [];
+let noiseSmall = document.createElement('canvas');
+let noiseCtx = noiseSmall.getContext('2d');
+let blocksW=1, blocksH=1;
+
+const MAX_STATIC_FRAMES = 120; // cap so a slow loop + high Hz can't demand an absurd precompute
+
+function buildNoiseFrames(){
+  const px = parseFloat(controls.staticSize.value);
+  blocksW = Math.max(1, Math.ceil(W/px));
+  blocksH = Math.max(1, Math.ceil(H/px));
+  noiseSmall.width = blocksW; noiseSmall.height = blocksH;
+
+  const speed = parseFloat(controls.speed.value);
+  const period = 2*Math.PI/speed;
+  const fps = parseFloat(controls.staticRate.value);
+  const n = Math.min(MAX_STATIC_FRAMES, Math.max(1, Math.round(period*fps)));
+
+  const pixelCount = blocksW*blocksH;
+  noiseFrames = [];
+  for(let f=0; f<n; f++){
+    const buf = new ArrayBuffer(pixelCount*4);
+    const buf8 = new Uint8ClampedArray(buf);
+    const buf32 = new Uint32Array(buf);
+    for(let i=0;i<pixelCount;i++){
+      const v = (Math.random()*255)|0;
+      buf32[i] = (255<<24) | (v<<16) | (v<<8) | v; // A,B,G,R packed once instead of 4 separate writes
+    }
+    noiseFrames.push(new ImageData(buf8, blocksW, blocksH));
+  }
+
+  const actualHz = n / period;
+  const reqHz = fps;
+  const hzNote = document.getElementById('hzNote');
+  if(Math.round(actualHz) < reqHz){
+    hzNote.textContent = `capped at ~${actualHz.toFixed(1)} Hz at this speed`;
+  } else {
+    hzNote.textContent = '';
+  }
+}
+
+function drawStatic(loopT, period){
+  const grain = parseFloat(controls.grain.value);
+  if(grain<=0 || noiseFrames.length===0) return;
+  const frameDur = (2*Math.PI) / noiseFrames.length; // loopT is in radians (0..2PI), not seconds
+  let idx = Math.floor((loopT/frameDur)) % noiseFrames.length;
+  if(idx<0) idx=0;
+  noiseCtx.putImageData(noiseFrames[idx], 0, 0);
+  ctx.save();
+  ctx.globalAlpha = grain;
+  ctx.globalCompositeOperation = 'overlay';
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(noiseSmall, 0, 0, W, H);
+  ctx.restore();
+}
+
+// ---- render ----
+let blobSeeds = [];
+function ensureSeeds(count){
+  while(blobSeeds.length < count){
+    blobSeeds.push({
+      seed: Math.random()*1000,
+      phase: Math.random()*Math.PI*2,
+      orbitPhase: Math.random()*Math.PI*2,
+      rotDir: Math.random()<0.5 ? 1 : -1,
+      sizeJitter: 0.75 + Math.random()*0.5,
+    });
+  }
+}
+
+let startTime = performance.now();
+function frame(){
+  const speed = parseFloat(controls.speed.value);
+  const elapsed = (performance.now()-startTime)/1000;
+  const t = elapsed*speed;
+  const period = 2*Math.PI/speed;
+  const loopT = ((t % (2*Math.PI)) + 2*Math.PI) % (2*Math.PI);
+
+  const count = parseInt(controls.count.value);
+  ensureSeeds(count);
+  const sizeF = parseFloat(controls.size.value);
+  const wobbleF = parseFloat(controls.wobble.value);
+  const driftF = parseFloat(controls.drift.value);
+  const blurPx = parseFloat(controls.blur.value) * DPR;
+
+  const minDim = Math.min(W,H);
+  const colors = paletteColors.map(hexToRgb);
+  const alphas = paletteAlphas;
+
+  // base gradient wash so there are never gaps between blobs
+  const g = ctx.createLinearGradient(0,0,W,H);
+  g.addColorStop(0, `rgba(${colors[0].join(',')},${alphas[0]??1})`);
+  g.addColorStop(1, `rgba(${colors[1].join(',')},${alphas[1]??1})`);
+  ctx.fillStyle = g;
+  ctx.fillRect(0,0,W,H);
+
+  ctx.filter = `blur(${blurPx}px)`;
+  for(let i=0;i<count;i++){
+    const seed = blobSeeds[i];
+    const golden = 2.399963;
+    const dist = Math.sqrt((i+0.5)/count) * 0.62;
+    const ang0 = i*golden;
+    let cx = 0.5 + Math.cos(ang0)*dist*(W/minDim>1?1:W/H);
+    let cy = 0.5 + Math.sin(ang0)*dist*(H/minDim>1?1:H/W);
+    cx *= W; cy *= H;
+
+    const orbitR = driftF * minDim * 0.16;
+    cx += Math.cos(t + seed.orbitPhase) * orbitR;
+    cy += Math.sin(t*1.0 + seed.orbitPhase) * orbitR;
+
+    const baseR = minDim * (0.22 + sizeF*0.5) * seed.sizeJitter;
+    const wobbleAmp = baseR * wobbleF * 0.5;
+    const pts = blobPoints(baseR, wobbleAmp, t, seed.seed, 8);
+
+    const rot = (t + seed.phase) * seed.rotDir * 0.3;
+    const cosR = Math.cos(rot), sinR = Math.sin(rot);
+    const transformed = pts.map(p=>({
+      x: cx + (p.x*cosR - p.y*sinR),
+      y: cy + (p.x*sinR + p.y*cosR)
+    }));
+
+    const col = colors[i % colors.length];
+    const colAlpha = alphas[i % alphas.length] ?? 1;
+    ctx.globalAlpha = 0.85 * colAlpha;
+    ctx.fillStyle = `rgb(${col.join(',')})`;
+    drawSmoothBlob(ctx, transformed);
+    ctx.fill();
+  }
+  ctx.filter = 'none';
+  ctx.globalAlpha = 1;
+
+  drawStatic(loopT, period);
+
+  requestAnimationFrame(frame);
+}
+resize();
+buildNoiseFrames();
+updatePeriodLabel();
+frame();
+
+// ---- recording (shared by the single Record button and Batch Export) ----
+// mp4 first (what Figma / Lottie-style tools actually accept as a video fill),
+// falling back through webm codecs for browsers that can't record mp4 directly
+function pickVideoMimeType(){
+  const candidates = [
+    'video/mp4;codecs=avc1',
+    'video/mp4',
+    'video/webm;codecs=vp9',
+    'video/webm;codecs=vp8',
+    'video/webm',
+  ];
+  return candidates.find(m=>MediaRecorder.isTypeSupported(m)) || 'video/webm';
+}
+
+function recordLoop(baseName){
+  return new Promise((resolve)=>{
+    const speed = parseFloat(controls.speed.value);
+    const periodMs = (2*Math.PI/speed)*1000;
+
+    const stream = canvas.captureStream(60);
+    const mimeType = pickVideoMimeType();
+    const ext = mimeType.startsWith('video/mp4') ? 'mp4' : 'webm';
+    const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 12_000_000 });
+    const chunks = [];
+    recorder.ondataavailable = e=>{ if(e.data.size>0) chunks.push(e.data); };
+    recorder.onstop = ()=>{
+      const blob = new Blob(chunks, {type:mimeType});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `${baseName}.${ext}`; a.click();
+      setTimeout(()=>URL.revokeObjectURL(url), 4000);
+      resolve(ext);
+    };
+    // let a just-applied preset actually reach the canvas, then reset phase to the loop seam
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      startTime = performance.now();
+      recorder.start();
+      setTimeout(()=>recorder.stop(), periodMs);
+    }));
+  });
+}
+
+// GIF: downscaled + lower fps, since a full-res 256-color loop would be huge and slow to encode
+const GIF_MAX_DIM = 640;
+const GIF_FPS = 15;
+
+// gif.js's worker must be same-origin — pull the CDN script into a blob URL once,
+// since `new Worker(crossOriginUrl)` is blocked (unlike a plain <script src>)
+let gifWorkerUrlPromise = null;
+function getGifWorkerUrl(){
+  if(!gifWorkerUrlPromise){
+    gifWorkerUrlPromise = fetch('https://unpkg.com/gif.js@0.2.0/dist/gif.worker.js')
+      .then(r=>r.text())
+      .then(text=>URL.createObjectURL(new Blob([text], {type:'application/javascript'})));
+  }
+  return gifWorkerUrlPromise;
+}
+
+async function recordGif(baseName, onProgress){
+  const workerScript = await getGifWorkerUrl();
+  return new Promise((resolve)=>{
+    const speed = parseFloat(controls.speed.value);
+    const periodMs = (2*Math.PI/speed)*1000;
+    const frameDelay = 1000/GIF_FPS;
+    const totalFrames = Math.max(1, Math.round(periodMs/frameDelay));
+    const scale = Math.min(1, GIF_MAX_DIM/Math.max(W,H));
+    const gifW = Math.max(1, Math.round(W*scale));
+    const gifH = Math.max(1, Math.round(H*scale));
+
+    const gif = new GIF({
+      workers: 2,
+      quality: 10,
+      workerScript,
+      width: gifW,
+      height: gifH,
+    });
+    gif.on('progress', p=> onProgress && onProgress(p));
+    gif.on('finished', (blob)=>{
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url; a.download = `${baseName}.gif`; a.click();
+      setTimeout(()=>URL.revokeObjectURL(url), 4000);
+      resolve();
+    });
+
+    let captured = 0, captureTimer = null;
+    requestAnimationFrame(()=>requestAnimationFrame(()=>{
+      startTime = performance.now();
+      captureTimer = setInterval(()=>{
+        gif.addFrame(canvas, { delay: frameDelay, copy: true });
+        captured++;
+        if(captured>=totalFrames){
+          clearInterval(captureTimer);
+          gif.render();
+        }
+      }, frameDelay);
+    }));
+  });
+}
+
+const recordBtn = document.getElementById('recordBtn');
+const status = document.getElementById('status');
+const formatSelect = document.getElementById('exportFormat');
+let recording = false;
+
+async function exportOne(baseName, statusEl){
+  if(formatSelect.value==='gif'){
+    if(statusEl) statusEl.textContent = 'encoding gif… 0%';
+    await recordGif(baseName, p=>{ if(statusEl) statusEl.textContent = `encoding gif… ${Math.round(p*100)}%`; });
+    return 'gif';
+  }
+  return recordLoop(baseName);
+}
+
+recordBtn.addEventListener('click', async ()=>{
+  if(recording) return;
+  recording = true;
+  recordBtn.classList.add('recording');
+  recordBtn.textContent = '● Recording…';
+  status.textContent = '';
+  const ext = await exportOne('blob-blur-loop', status);
+  recording = false;
+  recordBtn.classList.remove('recording');
+  recordBtn.textContent = '● Record loop';
+  status.textContent = ext==='webm'
+    ? 'saved as .webm — convert to mp4 with ffmpeg for Figma/Lottie-style tools'
+    : 'saved';
+});
+
+// ---- batch export: applies each checked preset, records one loop, downloads, repeats ----
+document.getElementById('batchBtn').addEventListener('click', async ()=>{
+  if(recording) return;
+  const map = loadPresetMap();
+  const checked = [...document.querySelectorAll('.presetCheck:checked')].map(c=>c.dataset.name);
+  const statusEl = document.getElementById('batchStatus');
+  if(checked.length===0){ statusEl.textContent = 'check some presets first'; return; }
+
+  recording = true;
+  recordBtn.disabled = true;
+  document.getElementById('batchBtn').disabled = true;
+
+  for(let i=0;i<checked.length;i++){
+    const name = checked[i];
+    const state = map[name];
+    if(!state) continue;
+    const safeName = name.replace(/[^a-z0-9-_]+/gi, '_') || `preset_${i+1}`;
+    applyState(state);
+    statusEl.textContent = `exporting ${i+1}/${checked.length}: ${name}…`;
+    await exportOne(safeName, statusEl);
+  }
+
+  statusEl.textContent = `done — exported ${checked.length} loop${checked.length>1?'s':''}`;
+  recording = false;
+  recordBtn.disabled = false;
+  document.getElementById('batchBtn').disabled = false;
+});
+
+document.getElementById('toggle').addEventListener('click', ()=>{
+  const p = document.getElementById('panel');
+  const t = document.getElementById('toggle');
+  const hidden = p.style.display==='none';
+  p.style.display = hidden ? 'block' : 'none';
+  t.textContent = hidden ? '⌄' : '⌃';
+  t.title = hidden ? 'Hide panel' : 'Show panel';
+});
+</script>
+</body>
+</html>

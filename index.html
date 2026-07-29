@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<title>Blob Blur Loop Studio</title>
+<title>noisy gradient generator</title>
 <script src="https://unpkg.com/gif.js@0.2.0/dist/gif.js"></script>
 <style>
   :root{
@@ -11,7 +11,7 @@
   }
   *{box-sizing:border-box;}
   html,body{margin:0;height:100%;background:var(--bg);overflow:hidden;
-    font-family: ui-monospace, "SF Mono", "Cascadia Mono", Consolas, monospace;}
+    font-family: "Avenir Next", "SF Mono", "Cascadia Mono", Consolas, monospace;}
   canvas{display:block;width:100vw;height:100vh;}
 
   #panel{
@@ -132,7 +132,7 @@
 <canvas id="c"></canvas>
 
 <div id="panel">
-  <h1>Blob Blur Studio</h1>
+  <h1>noisy gradient generator</h1>
   <div class="subtitle">Design an animated gradient-noise loop, then record it as a seamless video.</div>
 
   <div class="section-card" id="controlSection">
@@ -187,6 +187,23 @@
         <option value="video">Video (mp4/webm)</option>
         <option value="gif">GIF</option>
       </select>
+    </div>
+    <div class="row" style="margin-bottom:6px;">
+      <label title="Pixel dimensions baked into the exported file, independent of the window">Resolution</label>
+      <select id="exportRes" title="Pixel dimensions baked into the exported file, independent of the window">
+        <option value="window">Window (current)</option>
+        <option value="1080x1080">1080 × 1080</option>
+        <option value="1920x1080">1920 × 1080</option>
+        <option value="1080x1920">1080 × 1920</option>
+        <option value="2560x1440">2560 × 1440</option>
+        <option value="3840x2160">3840 × 2160 (4K)</option>
+        <option value="custom">Custom…</option>
+      </select>
+    </div>
+    <div class="row" id="customResRow" style="display:none; margin-bottom:6px; gap:4px; justify-content:flex-start;">
+      <input type="text" inputmode="numeric" id="customResW" class="numOut" style="width:52px;" value="1920" title="Export width, in pixels">
+      <span style="color:var(--dim); font-size:10px;">×</span>
+      <input type="text" inputmode="numeric" id="customResH" class="numOut" style="width:52px;" value="1080" title="Export height, in pixels">
     </div>
     <button id="recordBtn" title="Records exactly one loop, from the seam">● Record loop</button>
     <div id="period">loop length: —</div>
@@ -488,26 +505,29 @@ function hexToRgb(hex){
 }
 
 // ---- static: precomputed, quantized so it loops exactly with the gradient ----
-let noiseFrames = [];
-let noiseSmall = document.createElement('canvas');
-let noiseCtx = noiseSmall.getContext('2d');
-let blocksW=1, blocksH=1;
+// state is a plain object so a fixed-resolution export can build its own noise grid
+// (sized to the export dimensions) without disturbing the live preview's
+function createNoiseState(){
+  const small = document.createElement('canvas');
+  return { frames: [], small, ctx: small.getContext('2d'), blocksW: 1, blocksH: 1 };
+}
+const liveNoise = createNoiseState();
 
 const MAX_STATIC_FRAMES = 120; // cap so a slow loop + high Hz can't demand an absurd precompute
 
-function buildNoiseFrames(){
+function buildNoiseFramesFor(state, w, h){
   const px = parseFloat(controls.staticSize.value);
-  blocksW = Math.max(1, Math.ceil(W/px));
-  blocksH = Math.max(1, Math.ceil(H/px));
-  noiseSmall.width = blocksW; noiseSmall.height = blocksH;
+  state.blocksW = Math.max(1, Math.ceil(w/px));
+  state.blocksH = Math.max(1, Math.ceil(h/px));
+  state.small.width = state.blocksW; state.small.height = state.blocksH;
 
   const speed = parseFloat(controls.speed.value);
   const period = 2*Math.PI/speed;
   const fps = parseFloat(controls.staticRate.value);
   const n = Math.min(MAX_STATIC_FRAMES, Math.max(1, Math.round(period*fps)));
 
-  const pixelCount = blocksW*blocksH;
-  noiseFrames = [];
+  const pixelCount = state.blocksW*state.blocksH;
+  state.frames = [];
   for(let f=0; f<n; f++){
     const buf = new ArrayBuffer(pixelCount*4);
     const buf8 = new Uint8ClampedArray(buf);
@@ -516,32 +536,35 @@ function buildNoiseFrames(){
       const v = (Math.random()*255)|0;
       buf32[i] = (255<<24) | (v<<16) | (v<<8) | v; // A,B,G,R packed once instead of 4 separate writes
     }
-    noiseFrames.push(new ImageData(buf8, blocksW, blocksH));
+    state.frames.push(new ImageData(buf8, state.blocksW, state.blocksH));
   }
+  return { n, period, fps };
+}
 
+function buildNoiseFrames(){
+  const { n, period, fps } = buildNoiseFramesFor(liveNoise, W, H);
   const actualHz = n / period;
-  const reqHz = fps;
   const hzNote = document.getElementById('hzNote');
-  if(Math.round(actualHz) < reqHz){
+  if(Math.round(actualHz) < fps){
     hzNote.textContent = `capped at ~${actualHz.toFixed(1)} Hz at this speed`;
   } else {
     hzNote.textContent = '';
   }
 }
 
-function drawStatic(loopT, period){
+function drawStatic(targetCtx, state, w, h, loopT){
   const grain = parseFloat(controls.grain.value);
-  if(grain<=0 || noiseFrames.length===0) return;
-  const frameDur = (2*Math.PI) / noiseFrames.length; // loopT is in radians (0..2PI), not seconds
-  let idx = Math.floor((loopT/frameDur)) % noiseFrames.length;
+  if(grain<=0 || state.frames.length===0) return;
+  const frameDur = (2*Math.PI) / state.frames.length; // loopT is in radians (0..2PI), not seconds
+  let idx = Math.floor((loopT/frameDur)) % state.frames.length;
   if(idx<0) idx=0;
-  noiseCtx.putImageData(noiseFrames[idx], 0, 0);
-  ctx.save();
-  ctx.globalAlpha = grain;
-  ctx.globalCompositeOperation = 'overlay';
-  ctx.imageSmoothingEnabled = false;
-  ctx.drawImage(noiseSmall, 0, 0, W, H);
-  ctx.restore();
+  state.ctx.putImageData(state.frames[idx], 0, 0);
+  targetCtx.save();
+  targetCtx.globalAlpha = grain;
+  targetCtx.globalCompositeOperation = 'overlay';
+  targetCtx.imageSmoothingEnabled = false;
+  targetCtx.drawImage(state.small, 0, 0, w, h);
+  targetCtx.restore();
 }
 
 // ---- render ----
@@ -558,41 +581,37 @@ function ensureSeeds(count){
   }
 }
 
-let startTime = performance.now();
-function frame(){
-  const speed = parseFloat(controls.speed.value);
-  const elapsed = (performance.now()-startTime)/1000;
-  const t = elapsed*speed;
-  const period = 2*Math.PI/speed;
-  const loopT = ((t % (2*Math.PI)) + 2*Math.PI) % (2*Math.PI);
-
+// draws one frame of the scene (background wash + blobs) onto any canvas at any
+// resolution — blurScale plays the role DPR does for the live canvas: it converts
+// the "Blur" slider (a resolution-independent feel) into actual backing-store pixels
+function renderScene(targetCtx, w, h, blurScale, t){
   const count = parseInt(controls.count.value);
   ensureSeeds(count);
   const sizeF = parseFloat(controls.size.value);
   const wobbleF = parseFloat(controls.wobble.value);
   const driftF = parseFloat(controls.drift.value);
-  const blurPx = parseFloat(controls.blur.value) * DPR;
+  const blurPx = parseFloat(controls.blur.value) * blurScale;
 
-  const minDim = Math.min(W,H);
+  const minDim = Math.min(w,h);
   const colors = paletteColors.map(hexToRgb);
   const alphas = paletteAlphas;
 
   // base gradient wash so there are never gaps between blobs
-  const g = ctx.createLinearGradient(0,0,W,H);
+  const g = targetCtx.createLinearGradient(0,0,w,h);
   g.addColorStop(0, `rgba(${colors[0].join(',')},${alphas[0]??1})`);
   g.addColorStop(1, `rgba(${colors[1].join(',')},${alphas[1]??1})`);
-  ctx.fillStyle = g;
-  ctx.fillRect(0,0,W,H);
+  targetCtx.fillStyle = g;
+  targetCtx.fillRect(0,0,w,h);
 
-  ctx.filter = `blur(${blurPx}px)`;
+  targetCtx.filter = `blur(${blurPx}px)`;
   for(let i=0;i<count;i++){
     const seed = blobSeeds[i];
     const golden = 2.399963;
     const dist = Math.sqrt((i+0.5)/count) * 0.62;
     const ang0 = i*golden;
-    let cx = 0.5 + Math.cos(ang0)*dist*(W/minDim>1?1:W/H);
-    let cy = 0.5 + Math.sin(ang0)*dist*(H/minDim>1?1:H/W);
-    cx *= W; cy *= H;
+    let cx = 0.5 + Math.cos(ang0)*dist*(w/minDim>1?1:w/h);
+    let cy = 0.5 + Math.sin(ang0)*dist*(h/minDim>1?1:h/w);
+    cx *= w; cy *= h;
 
     const orbitR = driftF * minDim * 0.16;
     cx += Math.cos(t + seed.orbitPhase) * orbitR;
@@ -611,15 +630,24 @@ function frame(){
 
     const col = colors[i % colors.length];
     const colAlpha = alphas[i % alphas.length] ?? 1;
-    ctx.globalAlpha = 0.85 * colAlpha;
-    ctx.fillStyle = `rgb(${col.join(',')})`;
-    drawSmoothBlob(ctx, transformed);
-    ctx.fill();
+    targetCtx.globalAlpha = 0.85 * colAlpha;
+    targetCtx.fillStyle = `rgb(${col.join(',')})`;
+    drawSmoothBlob(targetCtx, transformed);
+    targetCtx.fill();
   }
-  ctx.filter = 'none';
-  ctx.globalAlpha = 1;
+  targetCtx.filter = 'none';
+  targetCtx.globalAlpha = 1;
+}
 
-  drawStatic(loopT, period);
+let startTime = performance.now();
+function frame(){
+  const speed = parseFloat(controls.speed.value);
+  const elapsed = (performance.now()-startTime)/1000;
+  const t = elapsed*speed;
+  const loopT = ((t % (2*Math.PI)) + 2*Math.PI) % (2*Math.PI);
+
+  renderScene(ctx, W, H, DPR, t);
+  drawStatic(ctx, liveNoise, W, H, loopT);
 
   requestAnimationFrame(frame);
 }
@@ -642,18 +670,68 @@ function pickVideoMimeType(){
   return candidates.find(m=>MediaRecorder.isTypeSupported(m)) || 'video/webm';
 }
 
+// ---- fixed export resolution: renders to an offscreen canvas at exact pixel dims,
+// on its own clock, so recording never resizes or interrupts the live preview ----
+const exportResSelect = document.getElementById('exportRes');
+const customResRow = document.getElementById('customResRow');
+exportResSelect.addEventListener('change', ()=>{
+  customResRow.style.display = exportResSelect.value==='custom' ? 'flex' : 'none';
+});
+
+function getExportResolution(){
+  const sel = exportResSelect.value;
+  if(sel==='window') return null;
+  if(sel==='custom'){
+    const w = Math.max(16, Math.round(parseFloat(document.getElementById('customResW').value)) || 1920);
+    const h = Math.max(16, Math.round(parseFloat(document.getElementById('customResH').value)) || 1080);
+    return { w, h };
+  }
+  const [w,h] = sel.split('x').map(Number);
+  return { w, h };
+}
+
+// self-contained render loop onto an offscreen canvas — blurScale is derived from the
+// live canvas's DPR so a fixed-resolution export looks like the live preview, just scaled
+function startExportRender(w, h){
+  const c = document.createElement('canvas');
+  c.width = w; c.height = h;
+  const targetCtx = c.getContext('2d');
+  const noise = createNoiseState();
+  buildNoiseFramesFor(noise, w, h);
+
+  const blurScale = DPR * (Math.min(w,h) / Math.min(W,H));
+  const start = performance.now();
+  let handle = null;
+  const step = ()=>{
+    const speed = parseFloat(controls.speed.value);
+    const elapsed = (performance.now()-start)/1000;
+    const t = elapsed*speed;
+    const loopT = ((t % (2*Math.PI)) + 2*Math.PI) % (2*Math.PI);
+    renderScene(targetCtx, w, h, blurScale, t);
+    drawStatic(targetCtx, noise, w, h, loopT);
+    handle = requestAnimationFrame(step);
+  };
+  step();
+
+  return { canvas: c, stop: ()=>cancelAnimationFrame(handle) };
+}
+
 function recordLoop(baseName){
   return new Promise((resolve)=>{
     const speed = parseFloat(controls.speed.value);
     const periodMs = (2*Math.PI/speed)*1000;
+    const res = getExportResolution();
+    const exportRender = res ? startExportRender(res.w, res.h) : null;
+    const sourceCanvas = exportRender ? exportRender.canvas : canvas;
 
-    const stream = canvas.captureStream(60);
+    const stream = sourceCanvas.captureStream(60);
     const mimeType = pickVideoMimeType();
     const ext = mimeType.startsWith('video/mp4') ? 'mp4' : 'webm';
     const recorder = new MediaRecorder(stream, { mimeType, videoBitsPerSecond: 12_000_000 });
     const chunks = [];
     recorder.ondataavailable = e=>{ if(e.data.size>0) chunks.push(e.data); };
     recorder.onstop = ()=>{
+      if(exportRender) exportRender.stop();
       const blob = new Blob(chunks, {type:mimeType});
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
@@ -661,12 +739,18 @@ function recordLoop(baseName){
       setTimeout(()=>URL.revokeObjectURL(url), 4000);
       resolve(ext);
     };
-    // let a just-applied preset actually reach the canvas, then reset phase to the loop seam
-    requestAnimationFrame(()=>requestAnimationFrame(()=>{
-      startTime = performance.now();
+    if(exportRender){
+      // offscreen render is already running on its own clock — just capture one period
       recorder.start();
       setTimeout(()=>recorder.stop(), periodMs);
-    }));
+    } else {
+      // let a just-applied preset actually reach the canvas, then reset phase to the loop seam
+      requestAnimationFrame(()=>requestAnimationFrame(()=>{
+        startTime = performance.now();
+        recorder.start();
+        setTimeout(()=>recorder.stop(), periodMs);
+      }));
+    }
   });
 }
 
@@ -693,9 +777,15 @@ async function recordGif(baseName, onProgress){
     const periodMs = (2*Math.PI/speed)*1000;
     const frameDelay = 1000/GIF_FPS;
     const totalFrames = Math.max(1, Math.round(periodMs/frameDelay));
-    const scale = Math.min(1, GIF_MAX_DIM/Math.max(W,H));
-    const gifW = Math.max(1, Math.round(W*scale));
-    const gifH = Math.max(1, Math.round(H*scale));
+
+    const res = getExportResolution();
+    const exportRender = res ? startExportRender(res.w, res.h) : null;
+    const sourceCanvas = exportRender ? exportRender.canvas : canvas;
+    const baseW = res ? res.w : W;
+    const baseH = res ? res.h : H;
+    const scale = Math.min(1, GIF_MAX_DIM/Math.max(baseW, baseH));
+    const gifW = Math.max(1, Math.round(baseW*scale));
+    const gifH = Math.max(1, Math.round(baseH*scale));
 
     const gif = new GIF({
       workers: 2,
@@ -706,6 +796,7 @@ async function recordGif(baseName, onProgress){
     });
     gif.on('progress', p=> onProgress && onProgress(p));
     gif.on('finished', (blob)=>{
+      if(exportRender) exportRender.stop();
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url; a.download = `${baseName}.gif`; a.click();
@@ -714,17 +805,24 @@ async function recordGif(baseName, onProgress){
     });
 
     let captured = 0, captureTimer = null;
-    requestAnimationFrame(()=>requestAnimationFrame(()=>{
-      startTime = performance.now();
+    const startCapturing = ()=>{
       captureTimer = setInterval(()=>{
-        gif.addFrame(canvas, { delay: frameDelay, copy: true });
+        gif.addFrame(sourceCanvas, { delay: frameDelay, copy: true });
         captured++;
         if(captured>=totalFrames){
           clearInterval(captureTimer);
           gif.render();
         }
       }, frameDelay);
-    }));
+    };
+    if(exportRender){
+      startCapturing();
+    } else {
+      requestAnimationFrame(()=>requestAnimationFrame(()=>{
+        startTime = performance.now();
+        startCapturing();
+      }));
+    }
   });
 }
 

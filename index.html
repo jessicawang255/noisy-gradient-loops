@@ -3,7 +3,13 @@
 <head>
 <meta charset="UTF-8">
 <title>noisy gradient generator</title>
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="icon" type="image/png" sizes="16x16" href="favicon-16.png">
+<link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
 <script src="https://unpkg.com/gif.js@0.2.0/dist/gif.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@500;600&display=swap" rel="stylesheet">
 <style>
   :root{
     --bg:#0a0a0c; --panel: rgba(16,16,20,0.7); --line: rgba(255,255,255,0.1);
@@ -14,37 +20,38 @@
     font-family: "Avenir Next", "SF Mono", "Cascadia Mono", Consolas, monospace;}
   canvas{display:block;width:100vw;height:100vh;}
 
-  #panel{
-    position:fixed; bottom:10px; right:46px; width:660px; max-height:calc(100vh - 20px);
+  /* two independent floating panels, not one shared box — so each hugs its own
+     content height instead of one forcing empty space onto the other */
+  #panelMain, #panelSide{
+    position:fixed; bottom:10px; max-height:calc(100vh - 20px);
     background:var(--panel); border:1px solid var(--line); border-radius:8px;
     padding:12px 13px 11px; backdrop-filter: blur(12px) saturate(140%);
     color:var(--text); font-size:10.5px; overflow-y:auto;
     box-shadow: 0 12px 40px rgba(0,0,0,0.4);
-    display:grid; grid-template-columns:1.4fr 0.95fr; gap:10px;
+    display:flex; flex-direction:column; gap:10px;
   }
-  #panel h1{ grid-column:1/-1; }
+  #panelSide{ right:46px; width:270px; }
+  #panelMain{ right:326px; width:380px; }
   .section-card{
     background: rgba(10,10,14,0.88);
     border:1px solid rgba(255,255,255,0.08);
     border-radius:8px;
     padding:11px;
+    display:flex; flex-direction:column; gap:8px;
   }
-  .section-card h2{ margin:0 0 8px; }
-  #presetSection, #recordSection{ display:flex; flex-direction:column; gap:8px; }
-  #recordSection{ grid-column:2; }
   #presetSection #presetList{ max-height:120px; overflow-y:auto; }
-  #panel::-webkit-scrollbar{ width:4px; }
-  #panel::-webkit-scrollbar-thumb{ background:var(--line); border-radius:2px; }
+  #panelMain::-webkit-scrollbar, #panelSide::-webkit-scrollbar{ width:4px; }
+  #panelMain::-webkit-scrollbar-thumb, #panelSide::-webkit-scrollbar-thumb{ background:var(--line); border-radius:2px; }
 
-  h1{ font-size:11px; letter-spacing:.04em; color:var(--text);
+  h1{ font-size:14px; letter-spacing:.04em; color:var(--text);
       margin:0 0 2px; font-weight:600; }
-  .subtitle{ grid-column:1/-1; font-size:9px; color:var(--dim); margin:0 0 10px; }
-  h2{ font-size:9px; letter-spacing:.09em; text-transform:uppercase; color:var(--dim);
-      margin:10px 0 6px; font-weight:600; }
-  h2:first-of-type{ margin-top:0; }
+  .subtitle{ font-size:12px; color:var(--text); margin:0 0 2px; }
+  h2{ font-family:'Roboto Mono', "SF Mono", "Cascadia Mono", Consolas, monospace;
+      font-size:12px; letter-spacing:.09em; text-transform:uppercase; color:var(--dim);
+      margin:0; font-weight:400; }
   h2 .h2-hint{ text-transform:none; letter-spacing:0; font-weight:400; color:var(--dim); opacity:0.7; }
 
-  .row{ display:flex; align-items:center; justify-content:space-between; gap:6px; margin-bottom:5px; }
+  .row{ display:flex; align-items:center; justify-content:space-between; gap:6px; }
   .row label{ color:var(--dim); font-size:10px; min-width:64px; cursor:help; }
   .row input.numOut{
     width:34px; min-width:34px; text-align:right; font-variant-numeric: tabular-nums; font-size:10px;
@@ -52,7 +59,8 @@
     color:var(--text); font-family:inherit; padding:1px 3px;
   }
   .row input.numOut:focus{ outline:none; border-color:var(--accent); }
-  .hint{ color:var(--dim); font-size:8.5px; line-height:1.4; margin:-1px 0 6px; }
+  .hint{ color:var(--dim); font-size:8.5px; line-height:1.4; margin:0; }
+  .paletteStrip{ height:6px; border-radius:3px; border:1px solid rgba(255,255,255,0.08); }
   input[type=range]{
     -webkit-appearance:none; flex:1; height:2px; background:var(--line);
     border-radius:2px; outline:none;
@@ -101,13 +109,11 @@
   }
   #addColorBtn:hover{ border-color:var(--accent); color:var(--accent); }
 
-  hr{ border:none; border-top:1px solid var(--line); margin:8px 0; }
-
-  #exportFormat{
+  #exportFormat, #exportRes{
     background:rgba(255,255,255,0.05); border:1px solid var(--line); border-radius:4px;
     color:var(--text); font:inherit; font-size:9.5px; padding:4px 6px; cursor:pointer;
   }
-  #exportFormat:focus{ outline:none; border-color:var(--accent); }
+  #exportFormat:focus, #exportRes:focus{ outline:none; border-color:var(--accent); }
 
   #recordBtn{
     width:100%; padding:6px 0; border-radius:5px; border:1px solid var(--line);
@@ -131,85 +137,94 @@
 <body>
 <canvas id="c"></canvas>
 
-<div id="panel">
+<div id="panelMain">
   <h1>noisy gradient generator</h1>
   <div class="subtitle">Design an animated gradient-noise loop, then record it as a seamless video.</div>
 
-  <div class="section-card" id="controlSection">
-    <h2>Palette</h2>
-    <div class="swatches" id="swatches"></div>
-    <div class="hint">1 &amp; 2 also tint the background wash · all colors cycle through the blobs · + / × to add or remove (2–8) · slider under each sets its opacity</div>
-
-    <h2>Blobs</h2>
-    <div class="row"><label title="How many blobs are drawn">Count</label><input type="range" id="count" min="3" max="9" step="1" value="6" title="How many blobs are drawn"><input type="text" inputmode="decimal" class="numOut" id="countOut" value="6" title="How many blobs are drawn — type to set exactly"></div>
-    <div class="row"><label title="Blob radius, relative to canvas size">Size</label><input type="range" id="size" min="0.25" max="0.9" step="0.01" value="0.5" title="Blob radius, relative to canvas size"><input type="text" inputmode="decimal" class="numOut" id="sizeOut" value="0.50" title="Blob radius, relative to canvas size — type to set exactly"></div>
-    <div class="row"><label title="How much each blob's edge ripples">Wobble</label><input type="range" id="wobble" min="0" max="1" step="0.01" value="0.4" title="How much each blob's edge ripples"><input type="text" inputmode="decimal" class="numOut" id="wobbleOut" value="0.40" title="How much each blob's edge ripples — type to set exactly"></div>
-    <div class="row"><label title="How far blobs orbit from their resting spot">Drift</label><input type="range" id="drift" min="0" max="1" step="0.01" value="0.35" title="How far blobs orbit from their resting spot"><input type="text" inputmode="decimal" class="numOut" id="driftOut" value="0.35" title="How far blobs orbit from their resting spot — type to set exactly"></div>
-
-    <h2>Motion &amp; blur</h2>
-    <div class="row"><label title="Gaussian blur applied over the blobs, in pixels">Blur</label><input type="range" id="blur" min="0" max="140" step="1" value="70" title="Gaussian blur applied over the blobs, in pixels"><input type="text" inputmode="decimal" class="numOut" id="blurOut" value="70" title="Gaussian blur applied over the blobs, in pixels — type to set exactly"></div>
-    <div class="row"><label title="Animation speed — also sets how long one loop takes">Speed</label><input type="range" id="speed" min="0.1" max="1.2" step="0.01" value="0.35" title="Animation speed — also sets how long one loop takes"><input type="text" inputmode="decimal" class="numOut" id="speedOut" value="0.35" title="Animation speed — type to set exactly"></div>
-    <div id="speedPeriod" class="hint">loop length: —</div>
-
-    <h2>Grain <span class="h2-hint">(film static overlay)</span></h2>
-    <div class="row"><label title="How visible the grain overlay is">Opacity</label><input type="range" id="grain" min="0" max="0.6" step="0.01" value="0.1" title="How visible the grain overlay is"><input type="text" inputmode="decimal" class="numOut" id="grainOut" value="0.10" title="How visible the grain overlay is — type to set exactly"></div>
-    <div class="row"><label title="Size of each grain speck, in pixels">Pixels</label><input type="range" id="staticSize" min="1" max="8" step="1" value="2" title="Size of each grain speck, in pixels"><input type="text" inputmode="decimal" class="numOut" id="staticSizeOut" value="2" title="Size of each grain speck, in pixels — type to set exactly"></div>
-    <div class="row"><label title="How often the grain pattern refreshes per second">Hertz</label><input type="range" id="staticRate" min="4" max="30" step="1" value="20" title="How often the grain pattern refreshes per second"><input type="text" inputmode="decimal" class="numOut" id="staticRateOut" value="20" title="How often the grain pattern refreshes per second — type to set exactly"></div>
-    <div id="hzNote" class="hint"></div>
-  </div>
-
-  <div class="section-card" id="presetSection">
-    <h2>Presets <span class="h2-hint">(saved on this device)</span></h2>
-    <div class="row" style="gap:4px;">
-      <input type="text" id="presetName" placeholder="name this look…"
-        style="flex:1; min-width:0; background:rgba(255,255,255,0.05); border:1px solid var(--line);
-        border-radius:4px; color:var(--text); font:inherit; font-size:9.5px; padding:4px 6px;">
-      <button id="savePresetBtn" title="Save the current settings as a preset"
-        style="padding:4px 9px; border-radius:4px; border:1px solid var(--line); background:transparent;
-        color:var(--text); font:inherit; font-size:9.5px; cursor:pointer;">Save</button>
+    <div class="section-card" id="paletteSection">
+      <h2>Palette</h2>
+      <div class="paletteStrip" id="paletteStrip"></div>
+      <div class="swatches" id="swatches"></div>
+      <div class="hint">1 &amp; 2 also tint the background wash · all colors cycle through the blobs · + / × to add or remove (2–8) · slider under each sets its opacity</div>
     </div>
-    <div id="presetList" style="margin:2px 0 6px; max-height:96px; overflow-y:auto;"></div>
-    <div class="hint" style="margin-top:-4px;">click a name to load it · check boxes to batch-export below</div>
 
-    <div class="row">
-      <button id="batchBtn" title="Records one loop per checked preset above, in the format set below" style="flex:1; padding:6px 0; border-radius:5px; border:1px solid var(--line);
-        background:transparent; color:var(--text); font:inherit; font-size:9.5px; cursor:pointer;">▶ Export checked presets</button>
+    <div class="section-card" id="blobsSection">
+      <h2>Blobs</h2>
+      <div class="row"><label title="How many blobs are drawn">Count</label><input type="range" id="count" min="3" max="9" step="1" value="6" title="How many blobs are drawn"><input type="text" inputmode="decimal" class="numOut" id="countOut" value="6" title="How many blobs are drawn — type to set exactly"></div>
+      <div class="row"><label title="Blob radius, relative to canvas size">Size</label><input type="range" id="size" min="0.25" max="0.9" step="0.01" value="0.5" title="Blob radius, relative to canvas size"><input type="text" inputmode="decimal" class="numOut" id="sizeOut" value="0.50" title="Blob radius, relative to canvas size — type to set exactly"></div>
+      <div class="row"><label title="How much each blob's edge ripples">Wobble</label><input type="range" id="wobble" min="0" max="1" step="0.01" value="0.4" title="How much each blob's edge ripples"><input type="text" inputmode="decimal" class="numOut" id="wobbleOut" value="0.40" title="How much each blob's edge ripples — type to set exactly"></div>
+      <div class="row"><label title="How far blobs orbit from their resting spot">Drift</label><input type="range" id="drift" min="0" max="1" step="0.01" value="0.35" title="How far blobs orbit from their resting spot"><input type="text" inputmode="decimal" class="numOut" id="driftOut" value="0.35" title="How far blobs orbit from their resting spot — type to set exactly"></div>
     </div>
-    <div class="hint">uses the format picked in Record below · browser may ask to allow multiple downloads — click allow</div>
-    <div id="batchStatus" class="hint" style="margin-bottom:0;"></div>
-  </div>
 
-  <div class="section-card" id="recordSection">
-    <h2>Record</h2>
-    <div class="row" style="margin-bottom:6px;">
-      <label title="File format for exported loops">Format</label>
-      <select id="exportFormat" title="Video: mp4 when the browser supports it, else webm. GIF: downscaled, smaller palette.">
-        <option value="video">Video (mp4/webm)</option>
-        <option value="gif">GIF</option>
-      </select>
+    <div class="section-card" id="motionSection">
+      <h2>Motion &amp; blur</h2>
+      <div class="row"><label title="Gaussian blur applied over the blobs, in pixels">Blur</label><input type="range" id="blur" min="0" max="140" step="1" value="70" title="Gaussian blur applied over the blobs, in pixels"><input type="text" inputmode="decimal" class="numOut" id="blurOut" value="70" title="Gaussian blur applied over the blobs, in pixels — type to set exactly"></div>
+      <div class="row"><label title="Animation speed — also sets how long one loop takes">Speed</label><input type="range" id="speed" min="0.1" max="1.2" step="0.01" value="0.35" title="Animation speed — also sets how long one loop takes"><input type="text" inputmode="decimal" class="numOut" id="speedOut" value="0.35" title="Animation speed — type to set exactly"></div>
+      <div id="speedPeriod" class="hint">loop length: —</div>
     </div>
-    <div class="row" style="margin-bottom:6px;">
-      <label title="Pixel dimensions baked into the exported file, independent of the window">Resolution</label>
-      <select id="exportRes" title="Pixel dimensions baked into the exported file, independent of the window">
-        <option value="window">Window (current)</option>
-        <option value="1080x1080">1080 × 1080</option>
-        <option value="1920x1080">1920 × 1080</option>
-        <option value="1080x1920">1080 × 1920</option>
-        <option value="2560x1440">2560 × 1440</option>
-        <option value="3840x2160">3840 × 2160 (4K)</option>
-        <option value="custom">Custom…</option>
-      </select>
+
+    <div class="section-card" id="grainSection">
+      <h2>Grain <span class="h2-hint">(film static overlay)</span></h2>
+      <div class="row"><label title="How visible the grain overlay is">Opacity</label><input type="range" id="grain" min="0" max="0.6" step="0.01" value="0.1" title="How visible the grain overlay is"><input type="text" inputmode="decimal" class="numOut" id="grainOut" value="0.10" title="How visible the grain overlay is — type to set exactly"></div>
+      <div class="row"><label title="Size of each grain speck, in pixels">Pixels</label><input type="range" id="staticSize" min="1" max="8" step="1" value="2" title="Size of each grain speck, in pixels"><input type="text" inputmode="decimal" class="numOut" id="staticSizeOut" value="2" title="Size of each grain speck, in pixels — type to set exactly"></div>
+      <div class="row"><label title="How often the grain pattern refreshes per second">Hertz</label><input type="range" id="staticRate" min="4" max="30" step="1" value="20" title="How often the grain pattern refreshes per second"><input type="text" inputmode="decimal" class="numOut" id="staticRateOut" value="20" title="How often the grain pattern refreshes per second — type to set exactly"></div>
+      <div id="hzNote" class="hint"></div>
     </div>
-    <div class="row" id="customResRow" style="display:none; margin-bottom:6px; gap:4px; justify-content:flex-start;">
-      <input type="text" inputmode="numeric" id="customResW" class="numOut" style="width:52px;" value="1920" title="Export width, in pixels">
-      <span style="color:var(--dim); font-size:10px;">×</span>
-      <input type="text" inputmode="numeric" id="customResH" class="numOut" style="width:52px;" value="1080" title="Export height, in pixels">
+</div>
+
+<div id="panelSide">
+    <div class="section-card" id="presetSection">
+      <h2>Presets <span class="h2-hint">(saved on this device)</span></h2>
+      <div class="row" style="gap:4px;">
+        <input type="text" id="presetName" placeholder="name this look…"
+          style="flex:1; min-width:0; background:rgba(255,255,255,0.05); border:1px solid var(--line);
+          border-radius:4px; color:var(--text); font:inherit; font-size:9.5px; padding:4px 6px;">
+        <button id="savePresetBtn" title="Save the current settings as a preset"
+          style="padding:4px 9px; border-radius:4px; border:1px solid var(--line); background:transparent;
+          color:var(--text); font:inherit; font-size:9.5px; cursor:pointer;">Save</button>
+      </div>
+      <div id="presetList" style="max-height:96px; overflow-y:auto;"></div>
+      <div class="hint">click a name to load it · check boxes to batch-export below</div>
+
+      <div class="row">
+        <button id="batchBtn" title="Records one loop per checked preset above, in the format set below" style="flex:1; padding:6px 0; border-radius:5px; border:1px solid var(--line);
+          background:transparent; color:var(--text); font:inherit; font-size:9.5px; cursor:pointer;">▶ Export checked presets</button>
+      </div>
+      <div class="hint">uses the format picked in Record below · browser may ask to allow multiple downloads — click allow</div>
+      <div id="batchStatus" class="hint"></div>
     </div>
-    <button id="recordBtn" title="Records exactly one loop, from the seam">● Record loop</button>
-    <div id="period">loop length: —</div>
-    <div class="hint" style="margin:-2px 0 0;">set by the Speed slider — one full loop, seamless · GIF exports are downscaled to keep file size sane</div>
-    <div id="status"></div>
-  </div>
+
+    <div class="section-card" id="recordSection">
+      <h2>Record</h2>
+      <div class="row">
+        <label title="File format for exported loops">Format</label>
+        <select id="exportFormat" title="Video: mp4 when the browser supports it, else webm. GIF: downscaled, smaller palette.">
+          <option value="video">Video (mp4/webm)</option>
+          <option value="gif">GIF</option>
+        </select>
+      </div>
+      <div class="row">
+        <label title="Pixel dimensions baked into the exported file, independent of the window">Resolution</label>
+        <select id="exportRes" title="Pixel dimensions baked into the exported file, independent of the window">
+          <option value="window">Window (current)</option>
+          <option value="1080x1080">1080 × 1080</option>
+          <option value="1920x1080">1920 × 1080</option>
+          <option value="1080x1920">1080 × 1920</option>
+          <option value="2560x1440">2560 × 1440</option>
+          <option value="3840x2160">3840 × 2160 (4K)</option>
+          <option value="custom">Custom…</option>
+        </select>
+      </div>
+      <div class="row" id="customResRow" style="display:none; gap:4px; justify-content:flex-start;">
+        <input type="text" inputmode="numeric" id="customResW" class="numOut" style="width:52px;" value="1920" title="Export width, in pixels">
+        <span style="color:var(--dim); font-size:10px;">×</span>
+        <input type="text" inputmode="numeric" id="customResH" class="numOut" style="width:52px;" value="1080" title="Export height, in pixels">
+      </div>
+      <button id="recordBtn" title="Records exactly one loop, from the seam">● Record loop</button>
+      <div id="period">loop length: —</div>
+      <div class="hint">set by the Speed slider — one full loop, seamless · GIF exports are downscaled to keep file size sane</div>
+      <div id="status"></div>
+    </div>
 </div>
 
 <div id="toggle" title="Hide panel">⌄</div>
@@ -328,6 +343,7 @@ function renderSwatches(){
       const i = +inp.dataset.i;
       const n = parseFloat(inp.value);
       if(!isNaN(n)) paletteAlphas[i] = Math.max(0, Math.min(100, n))/100;
+      updatePaletteStrip();
     });
     inp.addEventListener('blur', ()=>{
       const i = +inp.dataset.i;
@@ -341,6 +357,7 @@ function renderSwatches(){
       const hexField = wrap.querySelector(`.colorHex[data-i="${i}"]`);
       hexField.value = inp.value;
       hexField.classList.remove('invalid');
+      updatePaletteStrip();
     });
   });
   wrap.querySelectorAll('.colorHex').forEach(inp=>{
@@ -352,6 +369,7 @@ function renderSwatches(){
         paletteColors[i] = v;
         wrap.querySelector(`.colorInput[data-i="${i}"]`).value = v;
         inp.classList.remove('invalid');
+        updatePaletteStrip();
       } else {
         inp.classList.add('invalid');
       }
@@ -374,6 +392,18 @@ function renderSwatches(){
     paletteAlphas.push(1);
     renderSwatches();
   });
+  updatePaletteStrip();
+}
+
+// live preview of the blended palette, shown as a thin gradient bar above the swatches
+function updatePaletteStrip(){
+  const strip = document.getElementById('paletteStrip');
+  if(!strip) return;
+  const stops = paletteColors.map((hex,i)=>{
+    const [r,g,b] = hexToRgb(hex);
+    return `rgba(${r},${g},${b},${paletteAlphas[i]??1})`;
+  }).join(', ');
+  strip.style.background = `linear-gradient(to right, ${stops})`;
 }
 renderSwatches();
 
@@ -884,10 +914,12 @@ document.getElementById('batchBtn').addEventListener('click', async ()=>{
 });
 
 document.getElementById('toggle').addEventListener('click', ()=>{
-  const p = document.getElementById('panel');
+  const main = document.getElementById('panelMain');
+  const side = document.getElementById('panelSide');
   const t = document.getElementById('toggle');
-  const hidden = p.style.display==='none';
-  p.style.display = hidden ? 'block' : 'none';
+  const hidden = main.style.display==='none';
+  main.style.display = hidden ? 'flex' : 'none';
+  side.style.display = hidden ? 'flex' : 'none';
   t.textContent = hidden ? '⌄' : '⌃';
   t.title = hidden ? 'Hide panel' : 'Show panel';
 });
